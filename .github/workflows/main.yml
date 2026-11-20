@@ -1,0 +1,119 @@
+name: Download GameBanana Mod
+
+on:
+  workflow_dispatch:
+    inputs:
+      mod_id:
+        description: "GameBanana Mod ID"
+        required: true
+        default: "733947"
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Requests
+        run: pip install requests
+
+      - name: Download GameBanana Files
+        env:
+          MOD_ID: ${{ inputs.mod_id }}
+        run: |
+          python - <<'PY'
+          import requests
+          import os
+          import re
+          import time
+
+          mod_id = os.environ["MOD_ID"]
+
+          api = f"https://gamebanana.com/apiv11/Mod/{mod_id}?_csvProperties=_aFiles"
+
+          headers = {
+              "User-Agent": "Mozilla/5.0"
+          }
+
+          print("Getting mod information...")
+
+          response = requests.get(
+              api,
+              headers=headers,
+              timeout=60
+          )
+
+          response.raise_for_status()
+          data = response.json()
+
+          files = data.get("_aFiles")
+
+          if not files:
+              raise Exception("No downloadable files found!")
+
+          os.makedirs("downloads", exist_ok=True)
+
+          print(f"Found {len(files)} file(s)")
+
+          for index, file in enumerate(files, 1):
+
+              file_id = file.get("_idRow")
+
+              if not file_id:
+                  print("Skipping file without ID")
+                  continue
+
+              filename = (
+                  file.get("_sFile")
+                  or file.get("_sFileName")
+                  or f"GameBanana_{file_id}"
+              )
+
+              filename = os.path.basename(filename)
+
+              filename = re.sub(
+                  r'[<>:"/\\|?*]',
+                  "_",
+                  filename
+              )
+
+              url = f"https://gamebanana.com/dl/{file_id}"
+
+              print(f"\nDownloading: {filename}")
+              print(f"File ID: {file_id}")
+
+              r = requests.get(
+                  url,
+                  headers=headers,
+                  stream=True,
+                  timeout=300
+              )
+
+              r.raise_for_status()
+
+              path = os.path.join("downloads", filename)
+
+              with open(path, "wb") as output:
+                  for chunk in r.iter_content(1024 * 1024):
+                      if chunk:
+                          output.write(chunk)
+
+              print(f"Saved: {path}")
+
+              time.sleep(2)
+
+          print("\nDownload completed!")
+          PY
+
+      - name: Upload Downloads
+        uses: actions/upload-artifact@v4
+        with:
+          name: GameBanana-733947
+          path: downloads/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
